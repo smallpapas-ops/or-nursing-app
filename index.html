@@ -304,6 +304,11 @@ tfoot td{padding:8px 10px;background:#f5f7fa;border-top:2px solid var(--border)}
         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
         <span class="nav-label">壓力鍋技術士</span>
       </div>
+      <div class="nav-item" onclick="nav(7)" id="nav7">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 13.18v4L12 21l7-3.82v-4L12 17l-7-3.82zM12 3L1 9l11 6 9-4.91V17h2V9L12 3z"/></svg>
+        <span class="nav-label">護理臨床教師</span>
+        <span class="nav-badge warn" id="nb7" style="display:none"></span>
+      </div>
       <div class="sidebar-section">分析報告</div>
       <div class="nav-item" onclick="nav(5)" id="nav5">
         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z"/></svg>
@@ -636,6 +641,13 @@ function updateBadges(){
   if(nb3){nb3.style.display=alertN?'':'none';nb3.textContent=alertN;}
   const nbb3=document.getElementById('nbb3');
   if(nbb3){nbb3.style.display=alertN?'':'none';nbb3.textContent=alertN;}
+  // Clinical teacher warnings
+  const clinWarn=as.filter(s=>s.clinNo&&s.clinDate).reduce((n,s)=>{
+    const st=boilerSt(s.clinDate,2);
+    return n+(st.s==='exp'||st.s==='soon'?1:0);
+  },0);
+  const nb7=document.getElementById('nb7');
+  if(nb7){nb7.style.display=clinWarn?'':'none';nb7.textContent=clinWarn;}
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -727,6 +739,7 @@ function render(){
     case 4:el.innerHTML=renderBoiler();break;
     case 5:el.innerHTML=renderStats();setTimeout(drawStatCharts,60);break;
     case 6:el.innerHTML=renderResign();setTimeout(drawResignChart,60);break;
+    case 7:el.innerHTML=renderClinical();break;
   }
   updateBadges();
 }
@@ -813,6 +826,35 @@ function renderHome(){
     <div class="card-header"><div class="card-title">👩‍⚕️ 各職稱人數</div></div>
     <div class="card-body" style="display:flex;flex-wrap:wrap;gap:10px">
       ${TITLE_ORDER.map(t=>{const c=as.filter(s=>s.title===t).length;if(!c)return'';return`<div class="stat-box"><div class="stat-box-val" style="color:#1565c0">${c}</div><div class="stat-box-lbl">${t}</div></div>`;}).join('')}
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><div class="card-title">🎂 年齡分布</div><span style="font-size:11px;color:#90a4ae">依出生日期計算（未填者不計）</span></div>
+    <div class="card-body">
+      ${(()=>{
+        const ageBands=[
+          {lbl:'20-29歲',min:20,max:29,color:'#1565c0'},
+          {lbl:'30-39歲',min:30,max:39,color:'#4527a0'},
+          {lbl:'40-49歲',min:40,max:49,color:'#00695c'},
+          {lbl:'50-59歲',min:50,max:59,color:'#e65100'},
+          {lbl:'60歲以上',min:60,max:99,color:'#c62828'},
+        ];
+        const withBirth=as.filter(s=>s.birthDate);
+        const noBirth=as.filter(s=>!s.birthDate).length;
+        const maxN=Math.max(...ageBands.map(b=>withBirth.filter(s=>{const a=parseInt(calcAge(s.birthDate));return a>=b.min&&a<=b.max;}).length),1);
+        return ageBands.map(b=>{
+          const members=withBirth.filter(s=>{const a=parseInt(calcAge(s.birthDate));return a>=b.min&&a<=b.max;});
+          const n=members.length;
+          const p=maxN>0?Math.round(n/maxN*100):0;
+          const pct=withBirth.length>0?((n/withBirth.length)*100).toFixed(0):0;
+          return`<div class="bar-row">
+            <span class="bar-lbl" style="width:68px">${b.lbl}</span>
+            <div class="bar-track"><div class="bar-fill" style="width:${p}%;background:${b.color}">${p>12?pct+'%':''}</div></div>
+            <span class="bar-n">${n}</span>
+          </div>`;
+        }).join('')+
+        (noBirth>0?`<div style="font-size:11px;color:#90a4ae;margin-top:8px">⚠️ ${noBirth} 人未填出生日期，請至通訊表補充</div>`:'');
+      })()}
     </div>
   </div>`;
 }
@@ -1017,15 +1059,296 @@ function renderBoiler(){
 }
 
 // ── PAGE 5: STATS ─────────────────────────────────────────────
+// ── PAGE 7: CLINICAL TEACHER ──────────────────────────────────
+let clinicalUnlocked = false;
+// 學員資料（臨床教師 → 學員列表）
+if(!window.clinStudents) window.clinStudents = {};
+// 心靈老師對應
+if(!window.clinMentor) window.clinMentor = {};
+
+function renderClinical(){
+  const as=active();
+  const clinList=as.filter(s=>s.clinNo);
+  const nursing=as.filter(s=>s.title!=='助理員');
+  const expN=clinList.filter(s=>{const st=boilerSt(s.clinDate,2);return st.s==='exp';}).length;
+  const soonN=clinList.filter(s=>{const st=boilerSt(s.clinDate,2);return st.s==='soon';}).length;
+  const titleOrder=['護理長','副護理長','組長','護理師','護士'];
+
+  // Search/filter state
+  const qs=window._clinSearch||'';
+
+  const filtered=clinList.filter(s=>!qs||s.name.includes(qs)||s.id.includes(qs));
+
+  return`
+  <div class="page-title">護理臨床教師</div>
+  <div class="page-sub">共 ${clinList.length} 人 · 效期 2 年自動計算</div>
+
+  ${expN>0?`<div class="alert alert-danger">⚠️ ${expN} 人臨床教師資格已過期，請盡速更新！</div>`:''}
+  ${soonN>0?`<div class="alert alert-warn">🔔 ${soonN} 人資格將於 180 天內到期</div>`:''}
+
+  <div class="kpi-row">
+    <div class="kpi blue"><div class="kpi-label">🏫 臨床教師</div><div class="kpi-val">${clinList.length}</div><div class="kpi-sub">佔護理人員 ${nursing.length>0?((clinList.length/nursing.length)*100).toFixed(0):0}%</div></div>
+    <div class="kpi green"><div class="kpi-label">✅ 有效</div><div class="kpi-val">${clinList.filter(s=>boilerSt(s.clinDate,2).s==='ok').length}</div></div>
+    <div class="kpi orange"><div class="kpi-label">⚠️ 即將到期</div><div class="kpi-val">${soonN}</div></div>
+    <div class="kpi red"><div class="kpi-label">❌ 已過期</div><div class="kpi-val">${expN}</div></div>
+  </div>
+
+  <div class="card" style="margin-bottom:12px">
+    <div class="card-header"><div class="card-title">📊 各職稱佔比</div></div>
+    <div class="card-body">
+      ${titleOrder.map(t=>{
+        const total=nursing.filter(s=>s.title===t).length;
+        const hasClin=clinList.filter(s=>s.title===t).length;
+        if(total===0)return'';
+        const p=Math.round(hasClin/total*100);
+        const barColor=p>=50?'#2e7d32':p>=25?'#1565c0':'#90a4ae';
+        return`<div class="bar-row">
+          <span class="bar-lbl">${t}</span>
+          <div class="bar-track"><div class="bar-fill" style="width:${p}%;background:${barColor}">${p>12?p+'%':''}</div></div>
+          <span style="width:50px;font-size:11px;color:#546e7a;text-align:right;flex-shrink:0">${hasClin}/${total} 人</span>
+        </div>`;
+      }).join('')}
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <input type="text" id="clin-search" placeholder="🔍 搜尋姓名 / 員編..."
+      oninput="window._clinSearch=this.value;document.getElementById('clin-table').innerHTML=renderClinTable()"
+      value="${esc(qs)}" style="width:200px">
+    <div class="toolbar-right">
+      ${!clinicalUnlocked
+        ?`<button class="btn btn-outline" onclick="openClinicalLogin()">🔒 登入編輯</button>`
+        :`<button class="btn btn-outline" onclick="clinicalUnlocked=false;render()">🔓 鎖定</button>
+           <button class="btn btn-primary" onclick="openAddClinical()">＋ 新增臨床教師</button>`
+      }
+    </div>
+  </div>
+
+  <div id="clin-table">${renderClinTable()}</div>`;
+}
+
+function renderClinTable(){
+  const as=active();
+  const clinList=as.filter(s=>s.clinNo);
+  const qs=window._clinSearch||'';
+  const filtered=clinList.filter(s=>!qs||s.name.includes(qs)||s.id.includes(qs));
+  const sorted=filtered.sort((a,b)=>{
+    const sa=boilerSt(a.clinDate,2),sb=boilerSt(b.clinDate,2);
+    return (sa.days??99999)-(sb.days??99999);
+  });
+  return`<div class="card"><div class="tbl-wrap">
+  <table>
+    <thead><tr>
+      <th>員編</th><th>姓名</th><th>職稱</th><th>等級</th>
+      <th>教師編號</th><th>認證日期</th><th>效期至</th>
+      <th>狀態</th><th>剩餘天數</th><th>效期進度</th>
+      <th>心靈老師</th><th>2年期學員</th>
+      <th>操作</th>
+    </tr></thead>
+    <tbody>
+    ${sorted.map(s=>{
+      const st=boilerSt(s.clinDate,2);
+      const p=st.days!==null&&st.days>=0?Math.min(100,Math.round(st.days/(2*365)*100)):0;
+      const pgcls=st.s==='ok'?'prog-ok':st.s==='soon'?'prog-soon':'prog-exp';
+      const mentor=window.clinMentor[s.id]||'—';
+      const students=window.clinStudents[s.id]||[];
+      const stuStr=students.length>0?students.map(x=>x.name).join('、'):'—';
+      return`<tr>
+        <td class="td-muted">${s.id}</td>
+        <td><strong>${s.name}</strong></td>
+        <td>${s.title}</td>
+        <td><span class="badge b-blue">${s.level||'—'}</span></td>
+        <td style="font-family:monospace;font-size:11px">${s.clinNo}</td>
+        <td class="td-muted">${fd(s.clinDate)}</td>
+        <td style="white-space:nowrap;font-weight:600">${st.expDate?fd(st.expDate):'—'}</td>
+        <td><span class="badge ${st.cls}">${st.lbl}</span></td>
+        <td style="text-align:center;font-weight:${st.days!==null&&st.days<=90?700:400};color:${st.days!==null&&st.days<=90?'#c62828':'inherit'}">${st.days!==null?st.days+'天':'—'}</td>
+        <td style="min-width:90px">${st.days!==null&&st.days>=0?`<div class="prog-wrap"><div class="prog-fill ${pgcls}" style="width:${p}%"></div></div><div style="font-size:10px;color:#90a4ae;margin-top:2px">${p}%</div>`:'—'}</td>
+        <td style="font-size:12px;color:#546e7a">${mentor}</td>
+        <td style="font-size:11px;max-width:120px">${stuStr}</td>
+        <td style="white-space:nowrap">
+          ${clinicalUnlocked
+            ?`<button class="btn btn-outline btn-sm" onclick="openClinicalEdit('${s.id}')">✏️ 編輯</button>
+               <button class="btn btn-danger btn-sm" onclick="deleteClinical('${s.id}')" style="margin-left:4px">🗑 刪除</button>`
+            :`<span style="font-size:11px;color:#b0bec5">🔒</span>`
+          }
+        </td>
+      </tr>`;
+    }).join('')}
+    ${sorted.length===0?`<tr><td colspan="13" style="text-align:center;padding:32px;color:#90a4ae">無符合條件的記錄</td></tr>`:''}
+    </tbody>
+  </table>
+  </div></div>`;
+}
+
+function openAddClinical(){
+  const as=active().filter(s=>!s.clinNo);
+  showModal(`<div class="modal-title">＋ 新增臨床教師</div>
+    <div class="form-section">選擇人員</div>
+    <div class="form-field" style="margin-bottom:10px">
+      <label>選擇護理人員 *</label>
+      <select id="aclinstaf" style="width:100%">
+        <option value="">— 請選擇 —</option>
+        ${as.map(s=>`<option value="${s.id}">${s.name}（${s.title} · ${s.id}）</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-section">臨床教師資料</div>
+    <div class="form-grid">
+      <div class="form-field"><label>教師編號 *</label><input type="text" id="aclinNo" style="width:100%" placeholder="輸入教師編號"></div>
+      <div class="form-field"><label>認證日期 *</label><input type="date" id="aclinDate" style="width:100%"></div>
+    </div>
+    <div class="form-field" style="margin-bottom:10px">
+      <label>💝 心靈老師</label>
+      <input type="text" id="aclinMentor" style="width:100%" placeholder="輸入心靈老師姓名或員編">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">取消</button>
+      <button class="btn btn-primary" onclick="saveAddClinical()">💾 新增</button>
+    </div>`);
+}
+
+function saveAddClinical(){
+  const sid=document.getElementById('aclinstaf')?.value;
+  const no=document.getElementById('aclinNo')?.value;
+  const date=document.getElementById('aclinDate')?.value;
+  const mentor=document.getElementById('aclinMentor')?.value||'';
+  if(!sid){toast('❌ 請選擇人員');return;}
+  if(!no){toast('❌ 請填入教師編號');return;}
+  if(!date){toast('❌ 請填入認證日期');return;}
+  const s=staff.find(x=>x.id===sid);if(!s)return;
+  s.clinNo=no;s.clinDate=date;
+  if(mentor)window.clinMentor[sid]=mentor;
+  toast('✅ 已新增 '+s.name+' 的臨床教師資格');
+  closeModal();fbSaveStaff();render();
+}
+
+function deleteClinical(id){
+  const s=staff.find(x=>x.id===id);if(!s)return;
+  showModal(`<div class="modal-title">🗑 確認刪除臨床教師資格</div>
+    <p style="margin-bottom:16px;line-height:1.7">確定要移除 <strong>${s.name}</strong> 的臨床教師資格？<br>
+    <span style="color:#c62828;font-size:12px">⚠️ 此操作將清除教師編號、認證日期、學員及心靈老師資料，無法復原。</span></p>
+    <div style="font-size:12px;color:#546e7a;background:#f5f7fa;border-radius:8px;padding:10px;margin-bottom:14px">
+      <div>教師編號：${s.clinNo||'—'}</div>
+      <div>認證日期：${fd(s.clinDate)}</div>
+      <div>學員：${(window.clinStudents[id]||[]).map(x=>x.name).join('、')||'—'}</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">取消</button>
+      <button class="btn btn-danger" onclick="confirmDeleteClinical('${id}')">確認刪除</button>
+    </div>`);
+}
+function confirmDeleteClinical(id){
+  const s=staff.find(x=>x.id===id);if(!s)return;
+  s.clinNo='';s.clinDate=null;
+  delete window.clinStudents[id];
+  delete window.clinMentor[id];
+  toast('🗑 已移除 '+s.name+' 的臨床教師資格');
+  closeModal();fbSaveStaff();render();
+}
+
+function openClinicalLogin(){
+  showModal(`<div class="modal-title">🔒 臨床教師資料 — 請輸入密碼</div>
+    <input type="password" id="clinpin" placeholder="輸入密碼" style="width:100%;text-align:center;letter-spacing:6px;font-size:18px;margin-bottom:8px" onkeydown="if(event.key==='Enter')checkClinicalPin()">
+    <div style="color:#c62828;font-size:12px;min-height:16px;margin-bottom:10px" id="clinpinerr"></div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">取消</button>
+      <button class="btn btn-primary" onclick="checkClinicalPin()">解鎖</button>
+    </div>`);
+}
+function checkClinicalPin(){
+  if(document.getElementById('clinpin')?.value===ADD_PIN){
+    clinicalUnlocked=true;closeModal();render();
+  } else {
+    const e=document.getElementById('clinpinerr');
+    if(e)e.textContent='密碼錯誤，請再試一次';
+  }
+}
+
+function openClinicalEdit(id){
+  const s=staff.find(x=>x.id===id);if(!s)return;
+  const mentor=window.clinMentor[id]||'';
+  const students=window.clinStudents[id]||[];
+  // Get all active staff for student selection
+  const allActive=active().filter(x=>x.id!==id);
+  const stuIds=students.map(x=>x.id);
+  showModal(`<div class="modal-title">✏️ 編輯臨床教師資料 — ${s.name}</div>
+    <div class="form-section">臨床教師基本資料</div>
+    <div class="form-grid">
+      <div class="form-field"><label>教師編號</label><input type="text" id="eclinNo" value="${s.clinNo||''}" style="width:100%"></div>
+      <div class="form-field"><label>認證日期</label><input type="date" id="eclinDate" value="${s.clinDate||''}" style="width:100%"></div>
+    </div>
+    <div class="form-section">💝 心靈老師（Mentor）</div>
+    <div class="form-field" style="margin-bottom:10px">
+      <label>心靈老師姓名 / 編號</label>
+      <input type="text" id="eclinMentor" value="${mentor}" placeholder="輸入心靈老師姓名或員編" style="width:100%">
+    </div>
+    <div class="form-section">📚 2 年期學員名單</div>
+    <div style="font-size:12px;color:#78909c;margin-bottom:8px">勾選此教師負責輔導的 2 年期學員：</div>
+    <div style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:6px">
+      ${allActive.filter(x=>calcSen(x.joinDate).y<2).length===0
+        ?'<div style="text-align:center;padding:16px;color:#90a4ae;font-size:12px">目前無 2 年以內學員</div>'
+        :allActive.filter(x=>calcSen(x.joinDate).y<2).map(x=>`
+        <label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer;font-size:13px;hover:background:#f5f7fa">
+          <input type="checkbox" value="${x.id}" ${stuIds.includes(x.id)?'checked':''} class="clin-stu-check">
+          <span><strong>${x.name}</strong> <span style="color:#90a4ae;font-size:11px">${x.id} · ${x.title} · ${calcSen(x.joinDate).text}</span></span>
+        </label>`).join('')
+      }
+    </div>
+    <div style="font-size:11px;color:#90a4ae;margin-top:6px;margin-bottom:4px">亦可手動新增其他學員：</div>
+    <div id="extra-students">
+      ${students.filter(x=>!allActive.find(a=>a.id===x.id)).map((x,i)=>`
+        <div style="display:flex;gap:6px;margin-bottom:5px">
+          <input type="text" value="${x.name}" placeholder="學員姓名" style="flex:1" class="extra-stu-name" data-idx="${i}">
+          <button class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">✕</button>
+        </div>`).join('')}
+    </div>
+    <button class="btn btn-outline btn-sm" onclick="addExtraStudent()" style="margin-top:4px">＋ 手動新增學員</button>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">取消</button>
+      <button class="btn btn-primary" onclick="saveClinicalEdit('${id}')">💾 儲存</button>
+    </div>`);
+}
+
+function addExtraStudent(){
+  const c=document.getElementById('extra-students');
+  if(!c)return;
+  const div=document.createElement('div');
+  div.style.cssText='display:flex;gap:6px;margin-bottom:5px';
+  div.innerHTML=`<input type="text" placeholder="學員姓名" style="flex:1" class="extra-stu-name"><button class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">✕</button>`;
+  c.appendChild(div);
+}
+
+function saveClinicalEdit(id){
+  const s=staff.find(x=>x.id===id);if(!s)return;
+  // Save teacher fields
+  s.clinNo=document.getElementById('eclinNo')?.value||s.clinNo;
+  s.clinDate=document.getElementById('eclinDate')?.value||s.clinDate;
+  // Save mentor
+  window.clinMentor[id]=document.getElementById('eclinMentor')?.value||'';
+  // Save students from checkboxes
+  const allActive=active();
+  const checked=[...document.querySelectorAll('.clin-stu-check:checked')].map(cb=>{
+    const found=allActive.find(x=>x.id===cb.value);
+    return found?{id:found.id,name:found.name}:null;
+  }).filter(Boolean);
+  // Add extra manual students
+  const extras=[...document.querySelectorAll('.extra-stu-name')].map(inp=>inp.value.trim()).filter(Boolean).map(n=>({id:'',name:n}));
+  window.clinStudents[id]=[...checked,...extras];
+  toast('✅ 臨床教師資料已儲存');
+  closeModal();
+  fbSaveStaff();
+  render();
+}
+
 function renderStats(){
-  const tabs=['執照別分布','學歷分布','年資分布','進階職級分布','急救證照分布','🎓 各校人數分析'];
+  const tabs=['執照別分布','學歷分布','年資分布','進階職級分布','急救證照分布','🎓 各校人數分析','🎂 年齡分布'];
   return`
   <div class="page-title">統計分析</div>
   <div class="page-sub">在職護理人員各項統計（不含助理員）</div>
   <div class="inner-tabs">
     ${tabs.map((t,i)=>`<div class="itab${statsSubTab===i?' active':''}" onclick="statsSubTab=${i};destroyCharts();render()">${t}</div>`).join('')}
   </div>
-  <div id="stats-body">${statsSubTab===5 ? renderSchoolAnalysis() : renderStatsBody()}</div>`;
+  <div id="stats-body">${statsSubTab===5 ? renderSchoolAnalysis() : statsSubTab===6 ? renderAgeAnalysis() : renderStatsBody()}</div>`;
 }
 function renderSchoolAnalysis(){
   const as = active().filter(s=>s.title!=='助理員');
@@ -1144,6 +1467,90 @@ function renderSchoolAnalysis(){
     </table>
     </div>
   </div>`;
+}
+
+function renderAgeAnalysis(){
+  const as=active().filter(s=>s.title!=='助理員');
+  const withBirth=as.filter(s=>s.birthDate);
+  const noBirth=as.filter(s=>!s.birthDate);
+  const ageBands=[
+    {lbl:'20-29歲',min:20,max:29,color:'#1565c0'},
+    {lbl:'30-39歲',min:30,max:39,color:'#4527a0'},
+    {lbl:'40-49歲',min:40,max:49,color:'#00695c'},
+    {lbl:'50-59歲',min:50,max:59,color:'#e65100'},
+    {lbl:'60歲以上',min:60,max:99,color:'#c62828'},
+  ];
+  const titles=['護理長','副護理長','組長','護理師','護士'];
+
+  return`
+  <div class="card" style="margin-bottom:14px">
+    <div class="card-header"><div class="card-title">🎂 年齡分布概況</div></div>
+    <div class="card-body">
+      <div style="display:flex;gap:16px;margin-bottom:14px;flex-wrap:wrap;font-size:12px">
+        <span>📊 已填出生日期：<strong>${withBirth.length}</strong> 人</span>
+        <span style="color:#c62828">⚠️ 未填：<strong>${noBirth.length}</strong> 人</span>
+        ${withBirth.length>0?`<span>📅 最年輕：<strong>${Math.min(...withBirth.map(s=>parseInt(calcAge(s.birthDate))))}歲</strong></span>
+        <span>📅 最年長：<strong>${Math.max(...withBirth.map(s=>parseInt(calcAge(s.birthDate))))}歲</strong></span>`:''}
+      </div>
+      ${ageBands.map(b=>{
+        const members=withBirth.filter(s=>{const a=parseInt(calcAge(s.birthDate));return a>=b.min&&a<=b.max;});
+        const n=members.length;
+        const pct=withBirth.length>0?((n/withBirth.length)*100).toFixed(1):0;
+        const p=withBirth.length>0?Math.round(n/withBirth.length*100):0;
+        return`<div class="bar-row">
+          <span class="bar-lbl">${b.lbl}</span>
+          <div class="bar-track"><div class="bar-fill" style="width:${p}%;background:${b.color}">${p>10?pct+'%':''}</div></div>
+          <span class="bar-n">${n}</span>
+        </div>`;
+      }).join('')}
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><div class="card-title">📋 各職稱 × 年齡分布</div></div>
+    <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>年齡層</th>${titles.map(t=>`<th>${t}</th>`).join('')}<th>合計</th><th>佔比</th></tr></thead>
+      <tbody>
+      ${ageBands.map(b=>{
+        const counts=titles.map(t=>withBirth.filter(s=>{
+          if(s.title!==t)return false;
+          const a=parseInt(calcAge(s.birthDate));
+          return a>=b.min&&a<=b.max;
+        }).length);
+        const total=counts.reduce((a,c)=>a+c,0);
+        const pct=withBirth.length>0?((total/withBirth.length)*100).toFixed(1):0;
+        return`<tr>
+          <td><span class="badge b-blue">${b.lbl}</span></td>
+          ${counts.map(c=>`<td style="text-align:center">${c||'—'}</td>`).join('')}
+          <td style="text-align:center;font-weight:700">${total}</td>
+          <td style="text-align:center;color:#1565c0;font-weight:600">${pct}%</td>
+        </tr>`;
+      }).join('')}
+      </tbody>
+      <tfoot>
+        <tr style="background:#f5f7fa;font-weight:700">
+          <td>合計</td>
+          ${titles.map(t=>`<td style="text-align:center">${withBirth.filter(s=>s.title===t).length}</td>`).join('')}
+          <td style="text-align:center">${withBirth.length}</td>
+          <td style="text-align:center">100%</td>
+        </tr>
+      </tfoot>
+    </table>
+    </div>
+  </div>
+  ${noBirth.length>0?`
+  <div class="card">
+    <div class="card-header"><div class="card-title">⚠️ 未填出生日期（${noBirth.length} 人）</div><span style="font-size:11px;color:#90a4ae">請至通訊表編輯補充</span></div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>員編</th><th>姓名</th><th>職稱</th><th>等級</th></tr></thead>
+      <tbody>
+      ${noBirth.map(s=>`<tr>
+        <td class="td-muted">${s.id}</td><td>${s.name}</td><td>${s.title}</td>
+        <td><span class="badge b-blue">${s.level||'—'}</span></td>
+      </tr>`).join('')}
+      </tbody>
+    </table></div>
+  </div>`:''}`;
 }
 
 function renderStatsBody(){
@@ -1483,6 +1890,13 @@ function showStaffForm(d){
       <div class="form-field"><label>小型鍋爐證書號</label><input type="text" id="fpresS" value="${d?.presSmall||''}"></div>
       <div class="form-field"><label>小型鍋爐發照日期</label><input type="date" id="fpresSd" value="${d?.presSmallDate||''}"></div>
     </div>
+    <div class="form-section">🏫 護理臨床教師</div>
+    <div class="form-grid">
+      <div class="form-field"><label>臨床教師編號</label><input type="text" id="fclinNo" value="${d?.clinNo||''}" placeholder="輸入教師編號"></div>
+      <div class="form-field"><label>發照/認證日期</label><input type="date" id="fclinDate" value="${d?.clinDate||''}"></div>
+    </div>
+    ${d?.clinDate?`<div style="background:#e8f5e9;border-radius:8px;padding:8px 12px;font-size:12px;color:#2e7d32;margin-bottom:4px">📅 效期至：${(()=>{const exp=new Date(d.clinDate);exp.setFullYear(exp.getFullYear()+2);const diff=Math.floor((exp-TODAY)/86400000);const expStr=exp.toISOString().slice(0,10).replace(/-/g,'/');return diff<0?`<span style="color:#c62828">${expStr}（已過期 ${Math.abs(diff)} 天）</span>`:diff<=180?`<span style="color:#e65100">${expStr}（剩餘 ${diff} 天，即將到期）</span>`:`${expStr}（剩餘 ${diff} 天）`})()}</div>`:''}
+
     <div class="form-section">聯絡資料</div>
     <div class="form-grid">
       <div class="form-field"><label>信箱</label><input type="text" id="femail" value="${d?.email||''}"></div>
@@ -1514,6 +1928,7 @@ function saveStaff(editId){
     nursing_member:g('fmember'),id_no:g('fidno'),union_member:g('funion'),
     presFirst:g('fpresF'),presFirstDate:g('fpresFD'),
     presSmall:g('fpresS'),presSmallDate:g('fpresSd'),
+    clinNo:g('fclinNo'),clinDate:g('fclinDate')||null,
     inService:document.getElementById('finservice')?.checked||false,resigned:false};
   if(!o.name){toast('❌ 請填入姓名');return;}
   if(editId){

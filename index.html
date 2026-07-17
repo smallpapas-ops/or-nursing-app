@@ -1869,6 +1869,10 @@ function showStaffForm(d){
       <div class="form-field"><label>執照別</label>${sel('flic',['','護理師','護士'],d?.licType)}</div>
     </div>
     <div class="form-grid">
+      <div class="form-field"><label>出生日期</label><input type="date" id="fbirth" value="${d?.birthDate||''}"></div>
+      ${d?.birthDate?`<div class="form-field" style="display:flex;align-items:center;padding-top:20px"><span style="background:#e3f2fd;color:#1565c0;padding:6px 12px;border-radius:8px;font-size:13px;font-weight:600">🎂 ${calcAge(d.birthDate)}</span></div>`:'<div class="form-field"></div>'}
+    </div>
+    <div class="form-grid">
       <div class="form-field"><label>學歷</label>${sel('fedu',['','研究所','大學','專科'],d?.edu)}</div>
       <div class="form-field"><label>畢業學校</label><input type="text" id="fschool" value="${d?.school||''}"></div>
     </div>
@@ -1922,7 +1926,7 @@ function showStaffForm(d){
 function saveStaff(editId){
   const g=id=>document.getElementById(id)?.value||'';
   const o={id:g('fid'),name:g('fname'),title:g('ftitle'),level:g('flevel'),
-    joinDate:g('fjoin'),licType:g('flic'),edu:g('fedu'),school:g('fschool'),
+    joinDate:g('fjoin'),licType:g('flic'),edu:g('fedu'),school:g('fschool'),birthDate:g('fbirth')||null,
     bls:g('fbls')||null,acls:g('facls')||null,als:g('fals')||null,
     email:g('femail'),phone:g('fphone'),emergency:g('femerg'),location:g('floc'),
     nursing_member:g('fmember'),id_no:g('fidno'),union_member:g('funion'),

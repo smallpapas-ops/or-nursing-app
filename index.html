@@ -572,11 +572,14 @@ function calcAge(birthDate){
 function calcSen(d){
   if(!d)return{y:0,m:0,text:'—'};
   const j=new Date(d),t=TODAY;
+  if(j>t)return{y:0,m:0,text:'0年0個月'};
   let y=t.getFullYear()-j.getFullYear(),m=t.getMonth()-j.getMonth();
   if(m<0){y--;m+=12;}
   return{y,m,text:`${y}年${m}個月`};
 }
 function calcLeave(d){
+  if(!d)return 0;
+  if(new Date(d)>TODAY)return 0;
   const{y,m}=calcSen(d);const tot=y*12+m;
   if(tot<6)return 0;if(tot<18)return 3;if(tot<30)return 7;if(tot<42)return 10;
   if(tot<54)return 14;if(tot<66)return 15;if(tot<78)return 16;if(tot<90)return 17;
@@ -680,6 +683,8 @@ function renderDetailOnly(){
         </div>
       </div>
       <div style="padding:10px 14px;display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px">
+        <div><span style="color:#90a4ae">出生日期</span><br>${s.birthDate?s.birthDate.replace(/-/g,'/'):'—'}</div>
+        <div><span style="color:#90a4ae">年齡</span><br><strong style="color:#1565c0">${calcAge(s.birthDate)}</strong></div>
         <div><span style="color:#90a4ae">年資</span><br><strong>${sen.text}</strong></div>
         <div><span style="color:#90a4ae">特休</span><br><strong>${lv} 天</strong></div>
         <div><span style="color:#90a4ae">學歷</span><br>${s.edu||'—'}</div>
@@ -696,14 +701,17 @@ function renderDetailOnly(){
     </div>`;
   }).join('') : `<div class="card"><div class="tbl-wrap">
   <table>
-    <thead><tr><th>員編</th><th>姓名</th><th>職稱</th><th>等級</th><th>年資</th><th>到職日</th><th>特休</th><th>BLS</th><th>ACLS</th><th>ALS</th><th>執照</th><th>學歷</th><th>在職進修</th><th>操作</th></tr></thead>
+    <thead><tr><th>員編</th><th>姓名</th><th>職稱</th><th>等級</th><th>出生日期</th><th>年齡</th><th>年資</th><th>到職日</th><th>特休</th><th>BLS</th><th>ACLS</th><th>ALS</th><th>執照</th><th>學歷</th><th>在職進修</th><th>操作</th></tr></thead>
     <tbody>
     ${rows.map(s=>{
       const sen=calcSen(s.joinDate),lv=calcLeave(s.joinDate);
       const b=certSt(s.bls),a=certSt(s.acls),al=certSt(s.als);
+      const age=calcAge(s.birthDate);
       return`<tr>
         <td class="td-muted">${s.id}</td><td><strong>${s.name}</strong></td><td>${s.title}</td>
         <td><span class="badge b-blue">${s.level||'—'}</span></td>
+        <td class="td-muted" style="white-space:nowrap">${s.birthDate?s.birthDate.replace(/-/g,'/'):'—'}</td>
+        <td style="text-align:center;font-weight:600;color:#1565c0">${age}</td>
         <td style="white-space:nowrap">${sen.text}</td>
         <td class="td-muted" style="white-space:nowrap">${fd(s.joinDate)}</td>
         <td style="text-align:center;font-weight:600">${lv}</td>
@@ -1767,14 +1775,14 @@ function renderResign(){
     </div>
     <div class="tbl-wrap">
     <table>
-      <thead><tr><th>員編</th><th>姓名</th><th>職稱</th><th>離職日期</th><th>備註</th><th>操作</th></tr></thead>
+      <thead><tr><th>員編</th><th>姓名</th><th>職稱</th><th>離職日期</th><th>離職原因</th><th>操作</th></tr></thead>
       <tbody>
       ${resignations.map((r,idx)=>`<tr>
         <td class="td-muted">${r.id}</td>
         <td><strong>${r.name}</strong></td>
         <td>${r.title}</td>
         <td>${fd(r.resDate)}</td>
-        <td class="td-muted">${r.note||'—'}</td>
+        <td>${r.note?`<span style="background:#e3f2fd;color:#1565c0;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:500">${r.note}</span>`:'<span style="color:#b0bec5">—</span>'}</td>
         <td style="white-space:nowrap">
           <button class="btn btn-outline btn-sm" onclick="openEditResign(${idx})">✏️ 編輯</button>
           <button class="btn btn-danger btn-sm" onclick="deleteResign(${idx})" style="margin-left:4px">🗑 刪除</button>
@@ -1783,7 +1791,33 @@ function renderResign(){
       </tbody>
     </table>
     </div>
-  </div>`;
+  </div>
+  ${resignations.length>0?`
+  <div class="card">
+    <div class="card-header"><div class="card-title">📊 離職原因分析</div></div>
+    <div class="card-body">
+      ${(()=>{
+        const reasonMap={};
+        resignations.forEach(r=>{
+          const key=r.note||'未填寫';
+          reasonMap[key]=(reasonMap[key]||0)+1;
+        });
+        const sorted=Object.entries(reasonMap).sort((a,b)=>b[1]-a[1]);
+        const total=resignations.length;
+        const maxN=sorted[0]?.[1]||1;
+        const colors=['#1565c0','#4527a0','#00695c','#e65100','#c62828','#00838f','#546e7a','#6a1b9a'];
+        return sorted.map(([reason,n],i)=>{
+          const p=Math.round(n/maxN*100);
+          const pct=((n/total)*100).toFixed(0);
+          return`<div class="bar-row">
+            <span class="bar-lbl" style="width:90px;font-size:11px">${reason}</span>
+            <div class="bar-track"><div class="bar-fill" style="width:${p}%;background:${colors[i%colors.length]}">${p>15?pct+'%':''}</div></div>
+            <span class="bar-n">${n}</span>
+          </div>`;
+        }).join('');
+      })()}
+    </div>
+  </div>`:''}`;
 }
 
 function drawResignChart(){
@@ -1949,8 +1983,32 @@ function saveStaff(editId){
 function markResign(id){
   const s=staff.find(x=>x.id===id);if(!s)return;
   showModal(`<div class="modal-title">📤 確認離職</div>
-    <p style="margin-bottom:16px">確認將 <strong>${s.name}</strong>（${s.title}）標記為離職？</p>
-    <div class="form-field"><label>離職日期</label><input type="date" id="rdate" value="${TODAY.toISOString().slice(0,10)}" style="width:100%"></div>
+    <p style="margin-bottom:14px">確認將 <strong>${s.name}</strong>（${s.title}）標記為離職？</p>
+    <div class="form-field" style="margin-bottom:10px"><label>離職日期</label><input type="date" id="rdate" value="${TODAY.toISOString().slice(0,10)}" style="width:100%"></div>
+    <div class="form-field" style="margin-bottom:10px">
+      <label>離職原因</label>
+      <select id="rreason" style="width:100%" onchange="document.getElementById('rreason-other').style.display=this.value==='其他'?'block':'none'">
+        <option value="">— 請選擇 —</option>
+        <option>個人因素</option>
+        <option>家庭因素</option>
+        <option>升學進修</option>
+        <option>轉換跑道</option>
+        <option>轉至其他醫院</option>
+        <option>健康因素</option>
+        <option>薪資待遇</option>
+        <option>工作環境</option>
+        <option>合約到期</option>
+        <option>退休</option>
+        <option>生涯規劃</option>
+        <option>轉調單位</option>
+        <option>育嬰留停</option>
+        <option>其他</option>
+      </select>
+    </div>
+    <div class="form-field" id="rreason-other" style="display:none;margin-bottom:10px">
+      <label>其他原因說明</label>
+      <input type="text" id="rreason-text" placeholder="請填入原因" style="width:100%">
+    </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal()">取消</button>
       <button class="btn btn-danger" onclick="confirmResign('${id}')">確認離職</button>
@@ -1959,8 +2017,11 @@ function markResign(id){
 function confirmResign(id){
   const s=staff.find(x=>x.id===id);
   const resDate=document.getElementById('rdate')?.value||TODAY.toISOString().slice(0,10);
+  const reason=document.getElementById('rreason')?.value||'';
+  const otherText=document.getElementById('rreason-text')?.value||'';
+  const finalReason=reason==='其他'&&otherText?`其他：${otherText}`:reason;
   if(!s)return;s.resigned=true;
-  resignations.push({id:s.id,name:s.name,title:s.title,resDate});
+  resignations.push({id:s.id,name:s.name,title:s.title,resDate,note:finalReason});
   toast('已標記 '+s.name+' 離職');closeModal();render();fbSaveStaff();fbSaveResign();
 }
 
@@ -2011,6 +2072,10 @@ function saveContact(id){
 
 function openEditResign(idx){
   const r=resignations[idx];if(!r)return;
+  const reasons=['個人因素','家庭因素','育嬰留停','升學進修','生涯規劃','轉換跑道','轉調單位','轉至其他醫院','健康因素','薪資待遇','工作環境','合約到期','退休','其他'];
+  const isOther=r.note&&!reasons.slice(0,-1).includes(r.note)&&r.note!=='';
+  const currentReason=isOther?'其他':(r.note||'');
+  const otherText=isOther?r.note.replace(/^其他：/,''):'';
   showModal(`<div class="modal-title">✏️ 編輯離職記錄 — ${r.name}</div>
     <div class="form-grid">
       <div class="form-field"><label>員編</label><input type="text" id="eid" value="${r.id||''}" style="width:100%"></div>
@@ -2024,7 +2089,17 @@ function openEditResign(idx){
       </div>
       <div class="form-field"><label>離職日期 *</label><input type="date" id="eresdate" value="${r.resDate||''}" style="width:100%"></div>
     </div>
-    <div class="form-field" style="margin-bottom:10px"><label>備註</label><input type="text" id="enote" value="${r.note||''}" placeholder="例如：個人因素、升學、轉職..." style="width:100%"></div>
+    <div class="form-field" style="margin-bottom:10px">
+      <label>離職原因</label>
+      <select id="enote" style="width:100%" onchange="document.getElementById('enote-other').style.display=this.value==='其他'?'block':'none'">
+        <option value="">— 請選擇 —</option>
+        ${reasons.map(r=>`<option${r===currentReason?' selected':''}>${r}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-field" id="enote-other" style="display:${currentReason==='其他'?'block':'none'};margin-bottom:10px">
+      <label>其他原因說明</label>
+      <input type="text" id="enote-text" value="${otherText}" placeholder="請填入原因" style="width:100%">
+    </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal()">取消</button>
       <button class="btn btn-primary" onclick="saveResignEdit(${idx})">💾 儲存</button>
@@ -2034,12 +2109,15 @@ function saveResignEdit(idx){
   const name=document.getElementById('ename')?.value;
   const resDate=document.getElementById('eresdate')?.value;
   if(!name||!resDate){toast('❌ 請填入姓名與離職日期');return;}
+  const reason=document.getElementById('enote')?.value||'';
+  const otherText=document.getElementById('enote-text')?.value||'';
+  const finalReason=reason==='其他'&&otherText?`其他：${otherText}`:reason;
   resignations[idx]={
     id:document.getElementById('eid')?.value||resignations[idx].id,
     name,
     title:document.getElementById('etitle')?.value,
     resDate,
-    note:document.getElementById('enote')?.value||''
+    note:finalReason
   };
   toast('✅ 離職記錄已更新');closeModal();destroyCharts();render();fbSaveResign();
 }
@@ -2059,6 +2137,7 @@ function confirmDeleteResign(idx){
 }
 
 function openAddResign(){
+  const reasons=['個人因素','家庭因素','育嬰留停','升學進修','生涯規劃','轉換跑道','轉調單位','轉至其他醫院','健康因素','薪資待遇','工作環境','合約到期','退休','其他'];
   showModal(`<div class="modal-title">➕ 新增離職記錄</div>
     <div class="form-grid">
       <div class="form-field"><label>員編</label><input type="text" id="rid" style="width:100%"></div>
@@ -2068,7 +2147,17 @@ function openAddResign(){
       <div class="form-field"><label>職稱</label><select id="rtitle" style="width:100%">${TITLE_ORDER.map(t=>`<option>${t}</option>`).join('')}</select></div>
       <div class="form-field"><label>離職日期 *</label><input type="date" id="rdate2" style="width:100%"></div>
     </div>
-    <div class="form-field" style="margin-bottom:10px"><label>備註</label><input type="text" id="rnote" placeholder="例如：個人因素、升學、轉職..." style="width:100%"></div>
+    <div class="form-field" style="margin-bottom:10px">
+      <label>離職原因</label>
+      <select id="rnote" style="width:100%" onchange="document.getElementById('rnote-other').style.display=this.value==='其他'?'block':'none'">
+        <option value="">— 請選擇 —</option>
+        ${reasons.map(r=>`<option>${r}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-field" id="rnote-other" style="display:none;margin-bottom:10px">
+      <label>其他原因說明</label>
+      <input type="text" id="rnote-text" placeholder="請填入原因" style="width:100%">
+    </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal()">取消</button>
       <button class="btn btn-primary" onclick="saveResign()">儲存</button>
@@ -2079,7 +2168,9 @@ function saveResign(){
   const name=document.getElementById('rname')?.value;
   const title=document.getElementById('rtitle')?.value;
   const resDate=document.getElementById('rdate2')?.value;
-  const note=document.getElementById('rnote')?.value||'';
+  const reason=document.getElementById('rnote')?.value||'';
+  const otherText=document.getElementById('rnote-text')?.value||'';
+  const note=reason==='其他'&&otherText?`其他：${otherText}`:reason;
   if(!name||!resDate){toast('❌ 請填入姓名與離職日期');return;}
   resignations.push({id,name,title,resDate,note});
   toast('✅ 離職記錄已新增');closeModal();destroyCharts();render();fbSaveResign();
@@ -2104,8 +2195,8 @@ function exportCSV(type){
   const BOM='\uFEFF';
   let headers,rows;
   if(type==='staff'){
-    headers=['員編','姓名','職稱','等級','到職日','年資','特休(天)','執照別','學歷','在職進修','BLS到期','ACLS到期','ALS到期','壓力鍋(第一種)','小型鍋爐'];
-    rows=active().map(s=>[s.id,s.name,s.title,s.level,s.joinDate,calcSen(s.joinDate).text,calcLeave(s.joinDate),s.licType,s.edu,s.inService?'是':'否',s.bls||'',s.acls||'',s.als||'',s.presFirst||'',s.presSmall||'']);
+    headers=['員編','姓名','職稱','等級','出生日期','年齡','到職日','年資','特休(天)','執照別','學歷','在職進修','BLS到期','ACLS到期','ALS到期','壓力鍋(第一種)','小型鍋爐'];
+    rows=active().map(s=>[s.id,s.name,s.title,s.level,s.birthDate||'',calcAge(s.birthDate),s.joinDate,calcSen(s.joinDate).text,calcLeave(s.joinDate),s.licType,s.edu,s.inService?'是':'否',s.bls||'',s.acls||'',s.als||'',s.presFirst||'',s.presSmall||'']);
   }else if(type==='contact'){
     headers=['員編','姓名','職稱','出生日期','年齡','身分證','護理學會號','公會會員編號','信箱','手機','緊急聯絡','住所動向'];
     rows=active().map(s=>[s.id,s.name,s.title,s.birthDate||'',calcAge(s.birthDate),s.id_no||'',s.nursing_member||'',s.union_member||'',s.email||'',s.phone||'',s.emergency||'',s.location||'']);

@@ -318,7 +318,7 @@ tfoot td{padding:8px 10px;background:#f5f7fa;border-top:2px solid var(--border)}
         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6z"/></svg>
         <span class="nav-label">離職率分析</span>
       </div>
-      <div class="sidebar-footer">v2.1 RWD &nbsp;|&nbsp; 2026/05/25</div>
+      <div class="sidebar-footer" id="sidebar-date">v2.1 RWD</div>
     </div>
 
     <!-- Main Content -->
@@ -479,7 +479,7 @@ window.Chart = (function(){
 // ═══════════════════════════════════════════════════════════
 // DATA
 // ═══════════════════════════════════════════════════════════
-const TODAY = new Date('2026-05-25');
+const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 const CONTACT_PIN = 'AF0713';
 const ADD_PIN = 'AF0713';
 let activeTab = 0;
@@ -2308,7 +2308,10 @@ async function fbSaveResign(){
 // ═══════════════════════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════════════════════
-document.getElementById('topbar-date').textContent=TODAY.toLocaleDateString('zh-TW',{year:'numeric',month:'long',day:'numeric'});
+const _todayStr=TODAY.toLocaleDateString('zh-TW',{year:'numeric',month:'long',day:'numeric'});
+document.getElementById('topbar-date').textContent=_todayStr;
+const _sf=document.getElementById('sidebar-date');
+if(_sf)_sf.textContent='v2.1 RWD | '+TODAY.getFullYear()+'/'+(TODAY.getMonth()+1).toString().padStart(2,'0')+'/'+TODAY.getDate().toString().padStart(2,'0');
 loadFromFirebase();
 </script>
 </body>

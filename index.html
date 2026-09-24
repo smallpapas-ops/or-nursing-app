@@ -1575,8 +1575,11 @@ function renderStatsBody(){
       return as.filter(s=>s.title===t&&s.title!=='護士'&&s.title!=='實習護理師').length;
     };
   }else if(statsSubTab===1){
-    cats=['研究所','大學','專科'];
-    dataFn=(cat,t)=>as.filter(s=>s.title===t&&(s.edu||'').includes(cat)).length;
+    cats=['研究所','大學','專科','未填'];
+    dataFn=(cat,t)=>{
+      if(cat==='未填') return as.filter(s=>s.title===t&&!['研究所','大學','專科'].some(e=>(s.edu||'').includes(e))).length;
+      return as.filter(s=>s.title===t&&(s.edu||'').includes(cat)).length;
+    };
   }else if(statsSubTab===2){
     cats=['1年以下','1-2年','2-5年','5-10年','10-15年','15-20年','20-25年','25年以上'];
     dataFn=(cat,t)=>as.filter(s=>{
@@ -1589,8 +1592,12 @@ function renderStatsBody(){
       return false;
     }).length;
   }else if(statsSubTab===3){
-    cats=['N4','N3','N2','N1','N'];
-    dataFn=(cat,t)=>as.filter(s=>s.title===t&&s.level===cat).length;
+    cats=['N4','N3','N2','N1','N','未填'];
+    dataFn=(cat,t)=>{
+      if(cat==='未填') return as.filter(s=>s.title===t&&s.title!=='實習護理師'&&!['N4','N3','N2','N1','N'].includes(s.level||'')).length;
+      if(cat==='N') return as.filter(s=>s.title===t&&(s.level==='N'||s.title==='實習護理師')).length;
+      return as.filter(s=>s.title===t&&s.level===cat).length;
+    };
   }else{
     cats=['BLS','ACLS','ALS'];
     dataFn=(cat,t)=>as.filter(s=>s.title===t&&certSt(s[cat.toLowerCase()]).s==='ok').length;

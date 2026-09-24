@@ -1352,7 +1352,7 @@ function renderStats(){
   const tabs=['執照別分布','學歷分布','年資分布','進階職級分布','急救證照分布','🎓 各校人數分析','🎂 年齡分布'];
   return`
   <div class="page-title">統計分析</div>
-  <div class="page-sub">在職護理人員各項統計（不含助理員）</div>
+  <div class="page-sub">在職護理人員各項統計（不含助理員，含實習護理師）</div>
   <div class="inner-tabs">
     ${tabs.map((t,i)=>`<div class="itab${statsSubTab===i?' active':''}" onclick="statsSubTab=${i};destroyCharts();render()">${t}</div>`).join('')}
   </div>
@@ -1488,7 +1488,7 @@ function renderAgeAnalysis(){
     {lbl:'50-59歲',min:50,max:59,color:'#e65100'},
     {lbl:'60歲以上',min:60,max:99,color:'#c62828'},
   ];
-  const titles=['護理長','副護理長','組長','護理師','護士'];
+  const titles=['護理長','副護理長','組長','護理師','護士','實習護理師'];
 
   return`
   <div class="card" style="margin-bottom:14px">
@@ -1563,11 +1563,17 @@ function renderAgeAnalysis(){
 
 function renderStatsBody(){
   const as=active().filter(s=>s.title!=='助理員');
-  const titles=['護理長','副護理長','組長','護理師','護士'];
+  const titles=['護理長','副護理長','組長','護理師','護士','實習護理師'];
   let cats,dataFn;
   if(statsSubTab===0){
-    cats=['護理師','護士'];
-    dataFn=(cat,t)=>as.filter(s=>s.title===t&&s.licType===cat).length;
+    // 護照別：依職稱判斷（護士職稱=護士執照，實習護理師=無執照，其餘視為護理師執照）
+    cats=['護理師','護士','實習（無執照）'];
+    dataFn=(cat,t)=>{
+      if(cat==='護士') return as.filter(s=>s.title===t&&s.title==='護士').length;
+      if(cat==='實習（無執照）') return as.filter(s=>s.title===t&&s.title==='實習護理師').length;
+      // 護理師：職稱不是護士也不是實習護理師的（護理長/副護理長/組長/護理師都有護理師執照）
+      return as.filter(s=>s.title===t&&s.title!=='護士'&&s.title!=='實習護理師').length;
+    };
   }else if(statsSubTab===1){
     cats=['研究所','大學','專科'];
     dataFn=(cat,t)=>as.filter(s=>s.title===t&&(s.edu||'').includes(cat)).length;
@@ -1625,7 +1631,7 @@ function drawStatCharts(){
   const canvas=document.getElementById('statsChart');
   if(!canvas||!window.Chart)return;
   const as=active().filter(s=>s.title!=='助理員');
-  const titles=['護理長','副護理長','組長','護理師','護士'];
+  const titles=['護理長','副護理長','組長','護理師','護士','實習護理師'];
   let cats,dataFn;
   if(statsSubTab===0){cats=['護理師','護士'];dataFn=(c,t)=>as.filter(s=>s.title===t&&s.licType===c).length;}
   else if(statsSubTab===1){cats=['研究所','大學','專科'];dataFn=(c,t)=>as.filter(s=>s.title===t&&(s.edu||'').includes(c)).length;}
@@ -1785,6 +1791,7 @@ function renderResign(){
         <td>${r.note?`<span style="background:#e3f2fd;color:#1565c0;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:500">${r.note}</span>`:'<span style="color:#b0bec5">—</span>'}</td>
         <td style="white-space:nowrap">
           <button class="btn btn-outline btn-sm" onclick="openEditResign(${idx})">✏️ 編輯</button>
+          <button class="btn btn-success btn-sm" onclick="openReinstate(${idx})" style="margin-left:4px">🔄 復職</button>
           <button class="btn btn-danger btn-sm" onclick="deleteResign(${idx})" style="margin-left:4px">🗑 刪除</button>
         </td>
       </tr>`).join('')}
@@ -2136,6 +2143,60 @@ function confirmDeleteResign(idx){
   toast('🗑 已刪除 '+name+' 的離職記錄');closeModal();destroyCharts();render();fbSaveResign();
 }
 
+function openReinstate(idx){
+  const r=resignations[idx];if(!r)return;
+  const today=TODAY.toISOString().slice(0,10);
+  showModal(`<div class="modal-title">🔄 復職確認 — ${r.name}</div>
+    <p style="margin-bottom:12px;line-height:1.7;color:#546e7a">將 <strong>${r.name}</strong>（${r.title}）從離職名單中移除並恢復在職狀態。</p>
+    <div class="form-field" style="margin-bottom:10px">
+      <label>復職日期 *</label>
+      <input type="date" id="reinstate-date" value="${today}" style="width:100%">
+    </div>
+    <div class="form-field" style="margin-bottom:10px">
+      <label>管理密碼 *</label>
+      <input type="password" id="reinstate-pw" placeholder="請輸入密碼" style="width:100%">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">取消</button>
+      <button class="btn btn-success" onclick="confirmReinstate(${idx})">✅ 確認復職</button>
+    </div>`);
+}
+function confirmReinstate(idx){
+  const pw=document.getElementById('reinstate-pw')?.value;
+  if(pw!=='AF0713'){toast('❌ 密碼錯誤');return;}
+  const r=resignations[idx];if(!r)return;
+  const newJoin=document.getElementById('reinstate-date')?.value||TODAY.toISOString().slice(0,10);
+  // 先在 staff 中尋找（含已離職的）
+  let s=staff.find(x=>x.id===r.id);
+  if(s){
+    // 只更新離職狀態，保留原始到職日，另存復職日
+    s.resigned=false;
+    s.reinstateDate=newJoin; // 復職日另存，不覆蓋原始到職日
+  } else {
+    // 人員不在 staff 陣列中，從離職記錄重建基本資料
+    // 並保留可能存在於 Firebase 的完整資料（透過 id 比對）
+    s={
+      id:r.id, name:r.name, title:r.title,
+      level:'', edu:'', school:'', licType:r.title==='護士'?'護士':'護理師',
+      joinDate:newJoin, birthDate:'', bls:null, acls:null, als:null,
+      presFirst:'', presFirstDate:'', presSmall:'', presSmallDate:'',
+      nursing_member:'', union_member:'', id_no:'', phone:'', homePhone:'',
+      emergency:'', email:'', location:'', dept:'', shift:'',
+      inService:false, resigned:false
+    };
+    staff.push(s);
+  }
+  const reinstateId=s.id;
+  resignations.splice(idx,1);
+  destroyCharts();render();fbSaveStaff();fbSaveResign();
+  // 復職後立即切換到人員明細並開啟編輯視窗
+  nav(1);
+  setTimeout(()=>{
+    toast('✅ '+r.name+' 已復職！到職日：'+newJoin+'，請確認並補充資料後儲存。');
+    openEdit(reinstateId);
+  },300);
+}
+
 function openAddResign(){
   const reasons=['個人因素','家庭因素','育嬰留停','升學進修','生涯規劃','轉換跑道','轉調單位','轉至其他醫院','健康因素','薪資待遇','工作環境','合約到期','退休','其他'];
   showModal(`<div class="modal-title">➕ 新增離職記錄</div>
@@ -2272,6 +2333,11 @@ async function loadFromFirebase(){
           resigned:  s.resigned===true||s.resigned==='true',
           bls:s.bls||null, acls:s.acls||null, als:s.als||null,
         }));
+        // 修正復職時誤覆蓋的到職日，並寫回 Firebase
+        const joinFix={'15068':'2017-08-07','16926':'2024-08-19'};
+        let needFix=false;
+        staff.forEach(s=>{ if(joinFix[s.id]&&s.joinDate!==joinFix[s.id]){s.joinDate=joinFix[s.id];needFix=true;} });
+        if(needFix) setTimeout(()=>fbSaveStaff(),500);
       }
     }
     if(rv && typeof rv==='object'){
